@@ -12,6 +12,8 @@
 
 #include "ngx_request.h"
 #include "ngx_socket_epoll.h"
+#include "ngx_murmurhash.h"
+#include "ngx_db.h"
 
 using namespace std;
 
@@ -342,7 +344,7 @@ int requestData::parse_URI()
     {
         method = METHOD_GET;
     }
-    printf("method = %d\n", method);
+    // printf("method = %d\n", method);
     // filename
     pos = request_line.find("/", pos);
     if (pos < 0)
@@ -371,7 +373,7 @@ int requestData::parse_URI()
         }
         pos = _pos;
     }
-    cout << "file_name: " << file_name << endl;
+    // cout << "file_name: " << file_name << endl;
     // HTTP 版本号
     pos = request_line.find("/", pos);
     if (pos < 0)
@@ -524,7 +526,8 @@ int requestData::analysisRequest()
     if (method == METHOD_POST)
     {
         //get content
-        cout << "POST请求" << endl;
+        // cout << "POST请求" << endl;
+        
         char header[MAX_BUFF];
         sprintf(header, "HTTP/1.1 %d %s\r\n", 200, "OK");
         if (headers.find("Connection") != headers.end() && headers["Connection"] == "keep-alive")
@@ -533,7 +536,7 @@ int requestData::analysisRequest()
             sprintf(header, "%sConnection: keep-alive\r\n", header);
             sprintf(header, "%sKeep-Alive: timeout=%d\r\n", header, EPOLL_WAIT_TIME);
         }
-        cout << "content:" << content << endl;
+        // cout << "content:" << content << endl;
         int pos = content.find("=");
         if (pos < 0)
         {
@@ -548,9 +551,12 @@ int requestData::analysisRequest()
         {
             url = content.substr(pos + 1);
             // 添加hash计算
-            url_map[to_string(short_id)] = url;
-            short_url = "http://www.applestar.xyz:443/" + to_string(short_id);
-            short_id++;
+            auto x = MurmurHash2(url.c_str(), 200, 97);
+            string short_id = to_62(x);
+            short_url = "http://www.applestar.xyz:443/" + short_id;
+            // 添加到数据库中
+            MyDB *p_db=MyDB::GetInstance();
+            p_db->add_surl_SQL(short_id,url);
         }
         else
         {
@@ -559,8 +565,17 @@ int requestData::analysisRequest()
             defsuffix = content.substr(pos + 1);
             // cout << "defsuffix:" << defsuffix << endl;
             //添加重复判断
-            url_map[defsuffix]=url;
-            short_url = "http://www.applestar.xyz:443/" + defsuffix;
+            MyDB *p_db=MyDB::GetInstance();
+            if(p_db->find_lurl_SQL(defsuffix)=="-1")
+            {
+                short_url = "http://www.applestar.xyz:443/" + defsuffix;
+                p_db->add_surl_SQL(defsuffix,url);
+            }
+            else
+            {
+                short_url = "http://www.applestar.xyz:443/!! error repeat";
+            }
+            
         }
 
         char *send_content = const_cast<char *>(short_url.c_str());
@@ -600,12 +615,22 @@ int requestData::analysisRequest()
         if (dot_pos < 0)
         {
             str_ftype = MimeType::getMime("default");
-            if (url_map.find(file_name) != url_map.end())
+            // if (url_map.find(file_name) != url_map.end())
+            // {
+            //     string url = url_map[file_name];
+            //     handle30x(fd, 302, "Moved Temporarily", url);
+            //     return ANALYSIS_SUCCESS;
+            // }
+            MyDB *p_db=MyDB::GetInstance();
+            // cout<<__LINE__<<endl;
+            string url=p_db->find_lurl_SQL(file_name);
+            // cout<<__LINE__<<endl;
+            if(url!="-1")
             {
-                string url = url_map[file_name];
                 handle30x(fd, 302, "Moved Temporarily", url);
                 return ANALYSIS_SUCCESS;
             }
+            
         }
         else
             str_ftype = MimeType::getMime(file_name.substr(dot_pos));

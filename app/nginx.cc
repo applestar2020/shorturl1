@@ -18,7 +18,7 @@ using namespace std;
 extern ngx_log_t ngx_log;
 
 //socket相关
-CSocket m_socket; //socket全局对象
+CSocket m_socket;      //socket全局对象
 Threadpool threadpool; //线程池全局对象
 
 TimerManager timermanager;
@@ -67,7 +67,7 @@ int main()
             return 1;
         }
     }
-
+    
     // 主进程
     pid_t pid = getpid();
     pid_t ppid = getppid();
